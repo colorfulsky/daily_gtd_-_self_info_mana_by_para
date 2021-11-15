@@ -1,0 +1,21 @@
+#+title:Area of responsibility
+#+author:dong chen
+
+文档用于记录在这场人生无尽游戏中的持续领域，无始无终，伴随一生。
+
+* 数据分析
++ emacs [[file:Resources/EMACS/EMACS_learning_processing.org][使用进阶]]
++ [[file:Resources/知识管理/roam_knowledge_mana.org][org-roam系统搭建]]
+
+
+** python使用进阶
++ [[file:Resources/python/jupyter&jupyter_plus.org][jupyter-notebook环境增强及工具拓展]]
+
+*** GIS功能融合
+使用代码实现资源和地理信息的动态融合
+
+* PM项目管理
+
+
+* 产品经理知识方法论
+完整掌握一套产品经理工作方法论及对应知识体系。

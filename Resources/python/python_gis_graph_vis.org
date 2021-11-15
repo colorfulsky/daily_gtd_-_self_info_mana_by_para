@@ -1,0 +1,129 @@
+#+title:python gis & plus
+#+author: dong chen
+
+* 基础背景
+航线资源网络需同地理信息资源进行融合，达成资源情况和地理空间分布的动态平衡。
+
+* 目标
+熟练掌握python绘制地理空间分布图能力
+- [ ] 一阶段。掌握基础地理信息图上展示（含前端数据获取，数据存储等内容）
+- [ ] 二阶段。图像的动态化及变动信息关联变化
+- [ ] 三阶段。图网络分析及其他相关内容
+
+* 学习标的-工具视角
+具体如下：
+| 名称       | 用途                   |
+|------------+------------------------|
+| osmnx      | 规范地图下载           |
+| geopandas  | pandas式地图数据处理   |
+| matplotlib | 承接geo等输出数据展示  |
+| shapely    | 图形化能力增强         |
+| networkX   | 社交网络及城际网络增强 |
+
+优先级：
+1) osmnx
+2) geopandas
+3) shapely
+4) networkx
+
+
+* 分部学习各个环节
+** osmnx ++
+*** 安装
+#+begin_src shell
+  conda install geopandas
+#+end_src
+*** 数据分类下载及各种存储
+** geopandas
+同pandas高度类似，使用形如 ==Dataframe== 格式存储对应数据，使用matplotlib等绘图包绘制图像；功能列上必须包含一列geometry（内涵多边形的节点等信息），数据列结构大致如下：
+| col1 | col2 | col3 | geometry             |
+|------+------+------+----------------------|
+| ..   | ..   | ..   | POLYGON((a b,c d,... |
+
+给出的图像结果大致和下面效果类似
+#+begin_src ipython :session se1 :results raw drawer
+  import matplotlib.pyplot as plt
+  import geopandas as gpd
+  import libpysal as lps
+  from geopandas import read_file
+  %matplotlib inline
+
+  #导入dataset
+  _=lps.examples.load_example('columbus')
+  exp1= lps.examples.load_example('columbus')
+  pth=exp1.get_path('columbus.shp')
+
+  df=read_file(pth)
+
+  fig,ax=plt.subplots(figsize=(10,6))
+
+  df.plot(column='CRIME',cmap='OrRd',edgecolor='k',legend=True,ax=ax)
+
+
+#+end_src
+
+#+RESULTS:
+:results:
+# Out[2]:
+: <AxesSubplot:>
+[[file:./obipy-resources/0VnRMA.png]]
+:end:
+
+#+begin_src ipython :session se1 :results raw drawer
+  import pandas as pd
+
+  df = pd.DataFrame(
+      {'City': ['Buenos Aires', 'Brasilia', 'Santiago', 'Bogota', 'Caracas'],
+       'Country': ['Argentina', 'Brazil', 'Chile', 'Colombia', 'Venezuela'],
+       'Latitude': [-34.58, -15.78, -33.45, 4.60, 10.48],
+       'Longitude': [-58.66, -47.91, -70.66, -74.08, -66.86]})
+
+  gdf = gpd.GeoDataFrame(
+      df, geometry=gpd.points_from_xy(df.Longitude, df.Latitude))
+
+  #print(gdf.head())
+
+  world = gpd.read_file(gpd.datasets.get_path('naturalearth_lowres'))
+
+  ax=world[world.continent == 'South America'].plot(color = 'white',edgecolor='black')
+
+  gdf.plot(ax=ax,color='red')
+
+  plt.show()
+#+end_src
+
+#+RESULTS:
+:results:
+# Out[5]:
+[[file:./obipy-resources/5ukay7.png]]
+:end:
+
+*** 信息块的集合操作
+交集 并集 异或集 差集 Intersection union syme-diff diff 
+#+begin_src ipython :session se1 :results raw drawer
+  from shapely.geometry import Point
+  from geopandas import datasets,GeoDataFrame,read_file
+  from geopandas.tools import overlay
+
+  #NYC Boros
+  zippath= datasets.get_path('nybb')
+  polydf=read_file(zippath)
+
+  #Generate some circles
+  b=[int(x) for x in polydf.total_bounds]
+  N=10
+  polydf2=GeoDataFrame([
+      {'geometry':Point(x,y).buffer(10000),'value1':x+y,'value2':x-y}
+      for x,y in zip(range(b[0],b[2],int((b[2]-b[0])/N)),
+		     range(b[1],b[3],int((b[3]-b[1])/N)))])
+
+  polydf.plot()
+  polydf2.plot()
+#+end_src
+
+#+RESULTS:
+:results:
+# Out[9]:
+: <AxesSubplot:>
+[[file:./obipy-resources/9ap4FY.png]]
+:end:

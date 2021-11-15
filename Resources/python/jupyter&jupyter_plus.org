@@ -1,0 +1,29 @@
+#+title:jupyter notebook & plus tools
+#+author: chen dong
+
+* [[file:../../Area-responsibility.org][jupyter]]
+
+* jupyter plus
+添加jupyter 对应功能模块的增强说明。说明框架大致会遵循如下条目：
+1. 用途&优势
+2. 基础语法
+3. 应用感悟
+
+** dtale 模块功能学习
+*** 用途
+src_python{pandas.Dataframe} 的可视化动态控制界面，提供展示层面的类Excel功能。
+
+*** 基础语法
+    #+begin_src python
+      import dtale
+
+      df=....
+
+      dtale.show(df)
+    #+end_src
+通过动态生成的Dataframe数字矩阵，在对应列上进行数据透视等工作，便于快速的了解整个数据分布。
+
+*** 应用
+目前觉知的用途：
+1. 用作表格展示前端
+2. 利用图表能力用作对应绘图展示

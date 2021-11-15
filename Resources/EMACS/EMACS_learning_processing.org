@@ -1,0 +1,12 @@
+#+title:记录工作/生活过程中Emacs疑问及对应技巧
+#+author: chen dong
+
+* Emacs操作技巧
+** elisp
+** 关联组件
+*** elisp中启用web browser
+了解了一下emacs内部的文本浏览器情况，初步比较有意思的是：w3m和eww；似乎都要配置一番，有点小麻烦；先看下emacs自带的文本浏览器。
+默认似乎就是eww，意料之外的是可以打开图片只是排版比较感人。
+** 骚操作
+
+* Emacs感悟及抽象提炼

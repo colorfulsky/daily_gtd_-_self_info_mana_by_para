@@ -1,0 +1,39 @@
+#+title: git & magit
+#+author: dong chen
+
+记录git & magit 学习过程和各中操作技巧。
+
+* git工作原理
+本质上是所有代码文本建立了一个版本库，通过版本信息记录实现代码版本管理和并行开发控制。
+
+* git workflow
+
+** 创建工作区
+两边操作都挺有意思的，具体见于下表：
+| 工具        | 操作           | 命令       |
+|-------------+----------------+------------|
+| git-bash    | keyboard input | git init   |
+| emacs-magit | c-x g s y      | git init . |
+
+** 进行编辑
+
+** 提交工作区
+
+** 修改历史及版本回退
+
+** 提交远程仓库
+*** git-bash操作
+1) 设置ssh
+#+begin_quote
+ssh-keygen -t rsa -C "account-email-address"
+#+end_quote
+然后复制src_{rsa_id.pub}内容至github,ssh许可列表
+2) 第一次上传
+#+begin_src shell
+  git push -u origin master 
+#+end_src
+*** emacs 操作
+#+begin_quote
+    c-x g s #进入magit-mode
+    P u 推送至远程仓库，第一次可能需要
+#+end_quote

@@ -1,0 +1,35 @@
+#+title: 探索知识管理，搭建对应管理体系
+#+author： chen dong
+
+* 知识管理概论
+
+
+* 知识笔记/第二大脑管理方法
+** 文件夹/笔记本分类管理方法
+早期自己有做这方面尝试，为知笔记为核心载体进行了知识过程管理；暴露出一些缺点，主要是链条化，跨文件夹（领域）做操作十分不便，但在体系化文档管理方面还是很有用处的。
+** 卡片式知识网络管理
+近期接触卡片式笔记方法，主要优点为仿大脑记忆网络，双向链接可以很完整地构建起整个框架网络。
+
+*** 基础配置
+- [X] 基础工具安装
+- [X] org-roam-server搭建
+参照教程链接：https://www.zmonster.me/2020/06/27/org-roam-introduction.html
+#+begin_quote
+(setq org-roam-server-host "127.0.0.1"
+      org-roam-server-port 9090
+      org-roam-server-export-inline-images t
+      org-roam-server-authenticate nil
+      org-roam-server-network-label-truncate t
+      org-roam-server-network-label-truncate-length 60
+      org-roam-server-network-label-wrap-length 20)
+(org-roam-server-mode)
+#+end_quote
+
+参照教程设置完成后，关于org-roam 权限不足的问题，重新修改了 *所有权* ，可以进行访问了。
+
+*** 使用流程
+选定词汇 -> 进行标记 -> 创建外链 -> 外链跳转 -> 可视结构化展示
+
+*** 第一个双向外部链接
+这是一个测试外链，也是同 ==EMACS== 知识文件建立关联的第一步。
+建立第二个链接 [[file:../../Area-responsibility.org][兴趣发源文档]]

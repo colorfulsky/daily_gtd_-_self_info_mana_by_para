@@ -1,0 +1,7 @@
+#+title:[[file:../../project.org][Python工作自动化]]
+#+author: chen dong
+
+主要用来记载工作自动化任务框架及对应方法和工具，达成工作自动化，指日可待(*￣︶￣)
+
+* 备选框架
+pycron 依照cron模式进行工作，但是仍需启动windows服务，可能在 ==windows== 平台部署都免不了这个事情了吧。

@@ -1,0 +1,319 @@
+#+title:Hive SQL 知识学习及应用
+#+author: dong chen
+
+记录日常大数据调用过程当中的问题及解决方案，和部分代码样例。
+
+* 增删改查
+** 增
+针对集团BDP来说，自行创建对应数据集有些孟浪了，基本作为数据临时中转之用。语法基本也使用数据库标准语法
+#+begin_src sql
+  create table if not EXISTS XXX(
+	 ....
+	 )
+#+end_src
+** 删改
++在集团数据库层面应用很少，按下不表，遇到对应场景，信息对应补充。+
+在拥有dmcp数据库读写权限之后，表格更新、删改形成新的任务，随后逐步更新内容。
+
+** *查*
+*** 基础操作
+*** 链接增强
+**** 无关键字两表链接
+     #+begin_src sql
+       -- 笛卡尔外联，或者多表无条件连接
+       select * from table_1 join table_2 join table_3
+     #+end_src
+**** 不等值链接
+     #+begin_src sql
+       select * from table1 join table2 on (true) where judging clauses
+       --在where子句中通过条件实现非等值链接
+     #+end_src
+**** 链接理论加强
+***** 左链接理解拓展
+三种情况下左联不同的结果
+| 情景   | 效果                     | 备注            |
+|--------+--------------------------+-----------------|
+| 一对一 | 以左栏为充分条件进行拓展 | n:m -> n:n      |
+| 一对多 | 所有满足条件的行单独成行 | n:m(t) -> n*t:m |
+| 多对多 | 以一对多的效果做复合     | -               |
+
+*** 单层条件语句和聚合条件增强
+*** 行操作与计算字段（单体函数）
+**** 计算字段1to1
+1. 日期函数
+日常增量更新
+#+begin_src sql
+  -- 日常处理过程中，逐个添加内容，主要标记边际拓展的内容
+
+  select from_unixstamp(unixstamp('20210413','yyyyMMdd'),'yyyy-MM-dd') -- 日期格式转换
+
+  select weekofyear('yyyyMMdd') -- 给出日期年内周次
+#+end_src
+2. 文本函数
+3. 代数运算
+4.自定义函数(hive sql udf)
+**** 计算字段2to2
+1. 按字段汇集
+#+begin_src sql
+  select * from exp_table
+  where some conditions
+  partition by column_name
+#+end_src
+2. 序列函数or窗口函数
+*窗口函数*
+序列函数可以实现局部数据空间内的-- 运算多对一，结果一对一的效果，且不依赖于数据的强汇总。子句出现在select的宾语当中，通过src_sql{over} 做关联。涉及到的关键字如下：
+| 关键字                        | 功能                                                                |
+|-------------------------------+---------------------------------------------------------------------|
+| over                          | 充作连接字，关联局部聚合和对应约束语句                              |
+| partition by                  | 依照指定字段对条目进行集合，如使得createtime中月份为3月的聚合在一起 |
+| rows between x and y          | 在聚集语句当中，依照行段相对位置筛选对应范围值，配合下述字段        |
+| preceding                     | 向前计算                                                            |
+| following                     | 向后计算                                                            |
+| current row                   | 当前行                                                              |
+| unbounded following/preceding | 前序到头或者后序到尾                                                          |
+#+begin_src sql
+  select 
+     cookieid, 
+     createtime, 
+     pv, 
+     sum(pv) over (partition by cookieid order by createtime rows between unbounded preceding and current row) as pv1, 
+     sum(pv) over (partition by cookieid order by createtime) as pv2, 
+     sum(pv) over (partition by cookieid) as pv3, 
+     sum(pv) over (partition by cookieid order by createtime rows between 3 preceding and current row) as pv4, 
+     sum(pv) over (partition by cookieid order by createtime rows between 3 preceding and 1 following) as pv5, 
+     sum(pv) over (partition by cookieid order by createtime rows between current row and unbounded following) as pv6 
+  from cookie1;
+#+end_src
+
+*分片& row_number*
+实现非聚合情况下，数字的分片行数及分片标记。
+| 关键字     | 功能                                                                                                                      |
+|------------+---------------------------------------------------------------------------------------------------------------------------|
+| NTILE      | 根据NTILEN(N) 中N的具体值，将分片值进行切割及标记，如：n=3，则将数据按照某种排序规则，对前1/3标记1,1/3-2/3标记2，以此类推 |
+| ROW_NUMBER | 给出分片内既有排序的行数，数字从1开始，通常会搭配上个段落中的rows between 一起使用                                                              |
+可以参照下文示例，查看分片功能。
+#+begin_src sql
+  -- 1 把记录按价格顺序拆分成10片
+  drop table if exists test_dp_price_rk;
+  create table test_dp_price_rk
+  as
+  select
+   id,
+   price,
+   NTILE(10) OVER (order by price desc) as rn
+  from test_dp_price;
+
+  -- 2 按片取30%和70%，分别计算平均值
+  select
+    new_rn,
+    max(case when new_rn=1 then 'avg_price_first_30%' when new_rn=2 then 'avg_price_last_70%' end) as avg_price_name,
+    avg(price) avg_price
+  from 
+  (
+    select 
+      id,
+      price,
+      rn,
+      case when rn in (1,2,3) then 1 else 2 end as new_rn
+    from test_dp_price_rk
+  )a
+  group by new_rn;
+#+end_src
+
+*组内排序&分位值获取*
+实现分片组内排序，并实现组内分位值的重要功能。
+| 关键字       | 功能                                             |
+| rank         | 实现组内的排序，同样数值除开第一个字段外，会留空 |
+| DENSE_RANK   | 实现组内排序，同样数值使用同样编号，不留空       |
+| cume_dist    | 实现组内小于等于当前值的行数/组内总行数          |
+| percent_rank | 实现组内（当前行rank值-1）/（分组内总行数-1）                      |
+
+#+begin_src sql
+  -- 排序
+  select
+    cookieid,
+    createtime,
+    pv,
+    rank() over (partition by cookieid order by pv desc) as rn1,
+    dense_rank() over (partition by cookieid order by pv desc) as rn2,
+    row_number() over (partition by cookieid order by pv desc) as rn3
+  from cookie.cookie2 
+  where cookieid='cookie1';
+
+  -- 累计比例
+  select 
+    dept,
+    userid,
+    sal,
+    cume_dist() over (order by sal) as rn1,
+    cume_dist() over (partition by dept order by sal) as rn2
+  from cookie.cookie3;
+
+  -- 分位值排序
+#+end_src
+**** 条件语句
+1、函数功能
+主要是 ==case== 和 ==if== 语句。
+     #+begin_src sql
+       -- 主要是if 和 case 语句
+
+       select if(true or false,choice a,choice b);
+
+       select case key-word when clause1 then res1 when ... then ... else .. end --可以嵌套使用
+
+       ----------------------**-------------------------
+       -- 可以搭配在group by z子句中使用，可略去一层嵌套,case从句示例如下，if语句同样
+
+       select case key1 when sit1 then res1 else res2
+       from table1
+       where ....
+       group by (case key1 when sit1 then res1 else res2)
+
+     #+end_src
+2、语法&用途
+| 字段                    | 用途                                         |
+|-------------------------+----------------------------------------------|
+| case when then else end | 多重条件判断，可以出现在 *group by* 子句当中 |
+| if                      | 条件判断，可以出现在 *group by* 子句当中                   |
+**** 行列转换
+行列转换操作，实现src_python{import pandas as pd }及src_python{df.stack() df.unstack()}中对应函数功能，拓展了对于SQL数据操纵的理解。需要注意的是，hive SQL不太符合RDB范式要求。
+***** 前置知识
+#+begin_quote
+explode(a) - separates the elements of array a into multiple rows, or the elements of a map into multiple rows and columns
+    可以将数组炸开成多行，或者将map炸开成多行多列，是Hive内置的UDTF
+
+split(str, regex) - Splits str around occurances that match regex
+    按照正则规则去切割字符串
+    
+collect_list(x) - Returns a list of objects with duplicates
+    返回不去重的集合
+    
+collect_set(x) - Returns a set of objects with duplicate elements eliminated
+    返回一个去重的集合
+
+concat_ws(separator, [string | array(string)]+) - returns the concatenation of the strings separated by the separator
+    返回一个特定分隔符的拼接字符串
+
+max(expr) - Returns the maximum value of expr
+    返回表达式的最大值
+#+end_quote
+一般情况下，可以使用 ==desc function explode== 查看函数描述。
+***** 数据案例
+- 生成数据表
+      #+begin_src sql
+	-- 生成表1
+	create table school_final_test as
+	select 'jack' as name, 'english' as subject, 70 as score union all
+	select 'jack' as name, 'math' as subject, 80 as score union all
+	select 'jack' as name, 'chinese' as subject, 90 as score union all
+	select 'tim' as name, 'english' as subject, 10 as score union all
+	select 'tim' as name, 'math' as subject, 20 as score union all
+	select 'tim' as name, 'chinese' as subject, 30 as score;
+
+	-- 生成表2
+	create table school_final_test1 as
+	select 'jack' as name, 70 as english,80 as math, 90 as chinese union all
+	select 'tim' as name, 10 as english,20 as math, 30 as chinese;
+      #+end_src
+- 源表形式
+表1：
+| name | subject | score |
+|------+---------+-------|
+| jack | english |    70 |
+| jack | math    |    80 |
+| jack | chinese |    90 |
+| tim  | english |    10 |
+| tim  | math    |    20 |
+| tim  | chinese |    30 |
+
+表2：
+| name | english | math | chinese |
+| jack |      70 |   80 |      90 |
+| tim  |      10 |   20 |      30 |
+
+****** Question 1
+输入：表1  输出：表2
+#+begin_src sql
+  -- 使用 case when 及 group by 、max 实现标定行的转置筛选
+  select name,
+  max(case subject when 'english' then score else 0 end) as english,
+  max(case subject when 'math' then score else 0 end) as math,
+  max(case subject when 'chinese' then score else 0 end) as chinese
+  from school_final_test
+  group by name;
+#+end_src
+****** Qusetion 2
+输入：表1  输出：如下
+| name | scores                        |
+|------+-------------------------------|
+| jack | english:70,math:80,chinese:90 |
+| tim  | english:10,math:20,chinese:30 |
+#+begin_src sql
+  --group by + collect_list + concat_ws 协同使用
+  select name,concat_ws(',',
+      collect_list(
+	  concat_ws(':',subject,cast(score as string))
+	  )
+      ) as scores
+  from school_final_test
+  group by name;
+#+end_src
+****** Question 3
+输入：表2  输出：如下
+| name | subject | score |
+|------+---------+-------|
+| jack | english |    70 |
+| jack | math    |    80 |
+| jack | chinese |    90 |
+| tim  | english |    10 |
+| tim  | math    |    20 |
+| tim  | chinese |    30 |
+
+#+begin_src sql
+  -- 使用常量值生成固定序列，如下述'english'\'math'等，随后使用 union all 合并，实际上等价于 merge(axis=1)
+  select name,'english' as subject,english as score from school_final_test1 
+  union all 
+  select name,'math' as subject,math as score from school_final_test1 
+  union all 
+  select name,'chinese' as subject,chinese as score from school_final_test1;
+#+end_src
+
+****** Question 4
+输入：
+| name | scores                        |
+|------+-------------------------------|
+| jack | english:70,math:80,chinese:90 |
+| tim  | english:10,math:20,chinese:30 |
+输出：
+| name | scores     |
+|------+------------|
+| jack | english:70 |
+| jack | math:80    |
+| jack | chinese:90 |
+| tim  | english:10 |
+| tim  | math:20    |
+| tim  | chinese:30 |
+
+#+begin_src sql
+  -- split + explode语法
+  -- Lateral View是一个连接用户自定义函数(UDFs)的连接词，可以有多个;如果炸裂的列中有null值但是需要显示可以在view后面加outer，类似表的左外连接;
+
+  -- 其中table1表示开窗得到的新表别名，必须写但可不使用(不使用时必须保证没有重复的列名)
+  select name,table1.scores as scores
+  from school_final_test2
+  lateral view explode(split(scores,',')) table1 as scores;
+#+end_src
+
+
+* 常用代码案例
+  #+begin_src sql
+    -- PIS 静态路由表单查询（航空经济快件可行性分析）
+
+    select pis_staticroute_segment.city_flow,pis_staticroute_segment.src_zone_batch,pis_staticroute_segment.product_code,pis_staticroute_segment.fast_static_effect_period,pis_staticroute_segment.static_effect_period
+
+    from ods_pis.pis_staticroute_segment
+
+    where pis_staticroute_segment.inc_day = '20210415'
+
+    group by pis_staticroute_segment.city_flow,pis_staticroute_segment.src_zone_batch,pis_staticroute_segment.product_code,pis_staticroute_segment.fast_static_effect_period,pis_staticroute_segment.static_effect_period
+  #+end_src
