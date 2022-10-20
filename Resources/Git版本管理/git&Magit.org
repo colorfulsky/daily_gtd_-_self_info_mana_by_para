@@ -16,10 +16,27 @@
 | emacs-magit | c-x g s y      | git init . |
 
 ** 进行编辑
-
+正常模式在工作区进行编辑。
 ** 提交工作区
+| 工具     | 操作        | 命令    |
+|----------+-------------+---------|
+| git-bash | input       | git add |
+| magit    | magit界面 s | git add |
 
-** 修改历史及版本回退
+** 差异比较
+差异对比默认和工作区对比进行
+| 工具     | 操作                  | 命令     |
+|----------+-----------------------+----------|
+| git-bash | input                 | git diff |
+| magit    | magit界面 对应节点tab | git diff |
+
+** 修改历史及版本回退                                                  :here:
+| 工具     | 操作      | 命令         |
+|----------+-----------+--------------|
+| git-bash | input     | git checkout |
+| magit    | magit界面 选定 | git checkout |
+** 分支与合并
+
 
 ** 提交远程仓库
 *** git-bash操作

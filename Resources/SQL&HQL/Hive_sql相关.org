@@ -11,9 +11,27 @@
 	 ....
 	 )
 #+end_src
+
+建表的三种方式，可以参照这个链接，创建分区表尤需谨慎
+1. [[https://blog.csdn.net/matrix_google/article/details/84633267][hive建表的三种方式]]
+2. 从分区表引用数据并加以覆写，参照下述代码：
+#+begin_src sql
+  -- Creating partitioned table as select is not supported. You can do it in two steps:
+
+  --create table my_table like dlk.big_table; This will create table with the same schema.
+
+  -- Load data.
+
+  set hive.exec.dynamic.partition=true;
+  set hive.exec.dynamic.partition.mode=nonstrict;
+
+  insert overwrite table my_table partition (day, month, year) 
+  select * from dlk.big_table;
+#+end_src
+
 ** 删改
 +在集团数据库层面应用很少，按下不表，遇到对应场景，信息对应补充。+
-在拥有dmcp数据库读写权限之后，表格更新、删改形成新的任务，随后逐步更新内容。
+在拥有dm.sxcp数据库读写权限之后，表格更新、删改形成新的任务，随后逐步更新内容。
 
 ** *查*
 *** 基础操作
@@ -305,15 +323,130 @@ max(expr) - Returns the maximum value of expr
 #+end_src
 
 
-* 常用代码案例
-  #+begin_src sql
-    -- PIS 静态路由表单查询（航空经济快件可行性分析）
+* 行列转换与映射专题
+主要记录行列转换功能实现及复杂数据结构使用。
+#+begin_src sql
+  -----------------hive 行列转换测试用例
 
-    select pis_staticroute_segment.city_flow,pis_staticroute_segment.src_zone_batch,pis_staticroute_segment.product_code,pis_staticroute_segment.fast_static_effect_period,pis_staticroute_segment.static_effect_period
 
-    from ods_pis.pis_staticroute_segment
+  drop table if exists default.jj_tmp1_ts;--删除可能的残存表
+  create table default.jj_tmp1_ts (a string,b string,c string) stored as parquet; --建立测试表1
+  insert into table default.jj_tmp1_ts  values ('1','dong','12'),('2','xi','14'),('3','nan','15'); --插入表1测试数据
+  insert into table default.jj_tmp1_ts  values ('','ti',''); --引入数据null值
+  select * from default.jj_tmp1_ts limit 10;
 
-    where pis_staticroute_segment.inc_day = '20210415'
 
-    group by pis_staticroute_segment.city_flow,pis_staticroute_segment.src_zone_batch,pis_staticroute_segment.product_code,pis_staticroute_segment.fast_static_effect_period,pis_staticroute_segment.static_effect_period
-  #+end_src
+  --------------------------------------------------------------------------------------
+  --测试基于字段的行/列复杂数据形式拼接（array\dict），源数据表保留，生成一个中间用表
+  --exm1 行array拼接,基于concat_ws,缺点是生成的为字符串不具备下步操作潜力
+  create table default.jj_tmp1_ts_tmp as 
+  select   t.*,concat_ws(',',a,b,c) cnc_row from default.jj_tmp1_ts t;
+
+  select * from default.jj_tmp1_ts_tmp limit 10;
+  desc default.jj_tmp1_ts_tmp;
+
+  --exm1.2 使用array关键字进项拼接
+  drop table if exists default.jj_tmp1_ts_tmp;
+  create table default.jj_tmp1_ts_tmp as 
+  select   t.*,concat_ws(',',a,b,c) cnc_row,array(a,b,c) arr_row from default.jj_tmp1_ts t;
+
+  --实现列转行，单字段
+  create table default.jj_tmp1_ts_tmp_fn1 as 
+  select t.*,g.exp_ad from default.jj_tmp1_ts_tmp t lateral view explode(arr_row) g as exp_ad;
+  select * from default.jj_tmp1_ts_tmp_fn1 limit 10;
+  desc default.jj_tmp1_ts_tmp_fn1;
+
+  --实现列转行，多字段
+  create table default.jj_tmp1_ts_tmp_fn2 as 
+  select t.*,g1.exp_ad1,g2.exp_ad2 from default.jj_tmp1_ts_tmp t 
+      lateral view explode(split(concat_ws(',',a,b),',')) g1 as exp_ad1  --生成拼接字段1
+      lateral view explode(arr_row) g2 as exp_ad2;  --生成拼接字段2
+  select * from default.jj_tmp1_ts_tmp_fn2 limit 100; --两个拼接字段结果为笛卡尔乘积形式
+  desc default.jj_tmp1_ts_tmp_fn2;
+
+
+  --------------------------------------------------------------------------------------------------------------------------
+  --------------------------------------------------------------------------------------------------------------------------
+  --exm2 列array拼接，基于group by 和 collect_list 进行操作，尝试使用union进行拼接会因为新生成字段数据类型和原值不同而失败;
+  drop table if exists default.jj_tmp1_ts_tmp2;
+  create table if not exists default.jj_tmp1_ts_tmp2 as
+  select collect_list(a) a,collect_list(b) b,collect_list(c) c from default.jj_tmp1_ts_tmp group by 1;
+  select * from default.jj_tmp1_ts_tmp2 limit 10;
+  desc default.jj_tmp1_ts_tmp2;
+
+  --exm2.1 实现列转列 inline 方式，但会发现inline无法用于array格式
+  -- select * from default.jj_tmp1_ts_tmp2 t lateral view inline(a) g;
+
+  --exm2.2 根据实验结果，array会因为和inline无法搭配而失败，改用struct方式,基于列值拼接拆解
+  drop table if exists default.jj_tmp1_ts_tmp3;
+  create table if not exists default.jj_tmp1_ts_tmp3 as
+  select t.*,named_struct('a',a,'b',b,'c',c,'arr_row',arr_row) struct_a,named_struct('a',a,'b',b) struct_b from default.jj_tmp1_ts_tmp t;
+  select * from default.jj_tmp1_ts_tmp3 limit 10;
+  desc default.jj_tmp1_ts_tmp3;
+
+  -- 实现横向列转列，基于inline制表函数
+  select t.*,g.a1,g.b1,g.c1 from default.jj_tmp1_ts_tmp3 t lateral view inline(array(t.struct_a)) g as a1,b1,c1,other;
+
+  -- 多字段维度
+  select t.*,g2.tt1,g1.other from default.jj_tmp1_ts_tmp3 t 
+      lateral view inline(array(t.struct_a)) g1 as a1,b1,c1,other
+      lateral view inline(array(t.struct_b)) g2 as tt1,tt2;
+
+
+  --exm2.3 参照2.1使用行归集，然后进行拆分为列
+  drop table if exists default.jj_tmp1_ts_tmp2;
+  create table if not exists default.jj_tmp1_ts_tmp2 as
+  select named_struct('a',collect_list(a)) struct_a,collect_list(b) b,named_struct('c',collect_list(c)) struct_c from default.jj_tmp1_ts_tmp group by 1;
+  select * from default.jj_tmp1_ts_tmp2 limit 10;
+  desc default.jj_tmp1_ts_tmp2;
+
+  --列值维度的行inline不存在行列位置处理的问题，尝试制造下冲突
+  insert into table default.jj_tmp1_ts_tmp2 select named_struct('a',array('hi')),array('b'),named_struct('c',array('hello'));
+
+  --发现：由于列值都有一致的格式要求，所以inline炸裂的效果可以值之间是一对一的关系，不存在出现笛卡尔乘积的情况
+  select t.*,g.aa from default.jj_tmp1_ts_tmp2 t lateral view inline(array(t.struct_a)) g as aa;
+
+  -----------------------------------------------------------------------------------------
+  --exm 3 转置问题
+  --区别于一般的矩阵转置，由于hive值存储的方式（列数据具备相同单值限制--数值类型、格式等；行数据为一系列不同属性值），所以转置操作具备方向性，另外hive里面没有类似Dataframe数据帧的index概念，可都视为列值；
+
+  ----------------------------------------------------------------------------------------------------------------------------------
+  create table default.jj_tmp1_ts2 (a string,b string,ex string) stored as parquet; --建立测试表2
+  insert into table default.jj_tmp1_ts2  values ('1','dong','ta'),('','xi','14'),('3','','15'),('11','',''); --插入表2测试数据
+  select * from  default.jj_tmp1_ts2 limit 10;
+
+  create table if not exists default.jj_tmp1_ts2_ts_fn as
+  select
+      m.id,
+      n.col1,
+      n.col2,
+      n.col3,
+      n.col4
+
+  from     
+      (select
+	  id,
+	  collect_list(bb) ts
+      from (
+	      select
+		  g.id,
+		  g.bb 
+		  from (
+			  select map('a',a,'b',b,'ex',ex) cc from default.jj_tmp1_ts2  --生成一维表中间结构压缩数据，其中map部分也可以视为部分固定范式
+		      ) t 
+	      lateral view explode(t.cc) g as id,bb                    --按照ket,value炸裂
+	  ) f                                                          -- 生成行列中间值
+      group by id                                                      --固定范式，按照id 汇总
+      ) m 
+      lateral view inline(array(struct(ts[0],ts[1],ts[2],ts[3]))) n as col1,col2,col3,col4 -- 固定范式，将中间结果拼接为array<struct{}>结构，使用inline炸裂，并命名新的列值
+  ;
+
+  select * from default.jj_tmp1_ts2_ts_fn limit 10; --完美实现
+
+  --说明：转置为受限操作，最好保证所有字段为统一数字格式，统一为字符串或者其他
+
+  -------------------------------------------------------------------------------------------------------------------
+  --exm 4 数据层叠 --stack --似乎和Python的层级堆叠并不是一个意思
+
+  SELECT stack(4, 'b', 'y', 'b2','b3','b4') as (b,c);
+#+end_src

@@ -1,0 +1,35 @@
+#+title:PRESTO SQL相关知识学习
+#+author:dong chen
+
+收录日常学习到的知识，并同现有知识发生链接。
+
+* 第一个例子
+#+begin_src sql
+  ## 创建表格，并做关联聚合查询，值得一提的是presto对字段追求命名
+  with 
+	  t (id, word) as (select * from (values (1, 'a'), (2, 'b'), (3, 'c'))),
+    g (id2,money) as (select * from (values (1,7),(2,3),(4,7),(1,5)))
+  select t.id,array_join(array_agg(t.word),'') as ct from t full join g on t.id=g.id2 group by t.id
+#+end_src
+
+
+* 统计函数
+补充presto在数据统计方面的系列函数和用法用例。
+
+** 单变量分析
+*** 直方统计分布
+
+    主要使用函数为 **numeric_histogram** 进行均权统计，另有函数可以配置权重；
+
+  #+begin_src sql
+    select
+	per
+	,ct
+    from
+    (
+    select
+	numeric_histogram(10,cast(operation as bigint)) res 
+    from ods_shiva_oms.tt_operation_waybill_special_handler where inc_day between '20221001' and '20221008' and code = 'SOP05011' and cast(substr(operation ,1,2) as int) >= 60
+    ) a
+    cross join unnest(res) as tm_tb (per,ct)
+  #+end_src
